@@ -11,4 +11,6 @@ pub use crate::error::ContractError;
 #[cfg(test)]
 mod integration_tests;
 #[cfg(test)]
+mod property_tests;
+#[cfg(test)]
 mod unit_tests;
