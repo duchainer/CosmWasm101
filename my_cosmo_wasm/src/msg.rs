@@ -12,3 +12,9 @@ pub enum QueryMsg {}
 
 #[cw_serde]
 pub enum ConfigResponse {}
+
+#[cw_serde]
+pub enum Cw20HookMsg {}
+
+#[cw_serde]
+pub enum EscrowResponse {}
