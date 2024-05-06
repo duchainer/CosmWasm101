@@ -26,15 +26,29 @@ use proptest::prelude::*;
 
 proptest! {
     #[test]
-    fn doesnt_crash(s in "\\PC*", ) {
-        escrow_redeem_is_always_equal_to_send_amount(&s);
+    fn doesnt_crash(
+        addrs in vec!["[:ascii:]{3,}", "[:ascii:]{3,}", "[:ascii:]{3,}"],
+        initial_balances in vec![0..999999999999999u128, 0..999999999999999u128],
+        // amount: u128, // Fails on overflow when adding to it
+        sent_amount : u128
+    ) {
+        prop_assume!(addrs[0] != addrs[1]);
+        prop_assume!(addrs[1] != addrs[2]);
+        prop_assume!(addrs[0] != addrs[2]);
+
+        prop_assume!(sent_amount != 0); // Invalid zero amount.
+        escrow_redeem_is_always_equal_to_send_amount(addrs, initial_balances, sent_amount);
     }
 }
 
-fn escrow_redeem_is_always_equal_to_send_amount(s: &String) {
-    let owner = Addr::unchecked(s);
-    let alice = Addr::unchecked("alice");
-    let bob = Addr::unchecked("bob");
+fn escrow_redeem_is_always_equal_to_send_amount(
+    addrs: Vec<String>,
+    initial_balances: Vec<u128>,
+    sent_amount: u128,
+) {
+    let owner = Addr::unchecked(addrs[0].clone());
+    let alice = Addr::unchecked(addrs[1].clone());
+    let bob = Addr::unchecked(addrs[2].clone());
 
     let mut router: App = App::new(|_, _, _| {});
 
@@ -54,11 +68,11 @@ fn escrow_redeem_is_always_equal_to_send_amount(s: &String) {
                 initial_balances: vec![
                     Cw20Coin {
                         address: alice.to_string(),
-                        amount: Uint128::from(1000u128),
+                        amount: Uint128::from(initial_balances[0]),
                     },
                     Cw20Coin {
                         address: bob.to_string(),
-                        amount: Uint128::from(1000u128),
+                        amount: Uint128::from(initial_balances[1]),
                     },
                 ],
                 mint: Some(MinterResponse {
@@ -98,7 +112,7 @@ fn escrow_redeem_is_always_equal_to_send_amount(s: &String) {
     // escrow funds into the contract
     let msg = Cw20ExecuteMsg::Send {
         contract: escrow_addr.to_string(),
-        amount: Uint128::from(100u128),
+        amount: Uint128::from(sent_amount),
         msg: to_binary(&Cw20HookMsg::Escrow { time: 10 }).unwrap(),
     };
 
@@ -120,7 +134,7 @@ fn escrow_redeem_is_always_equal_to_send_amount(s: &String) {
         .wrap()
         .query_wasm_smart(usdc_addr.clone(), &msg)
         .unwrap();
-    assert_eq!(res.balance, Uint128::from(100u128));
+    assert_eq!(res.balance, Uint128::from(sent_amount));
 
     let msg = QueryMsg::Escrow {
         address: alice.to_string(),
@@ -129,7 +143,7 @@ fn escrow_redeem_is_always_equal_to_send_amount(s: &String) {
         .wrap()
         .query_wasm_smart(escrow_addr.clone(), &msg)
         .unwrap();
-    assert_eq!(res.amount, Uint128::from(100u128));
+    assert_eq!(res.amount, Uint128::from(sent_amount));
     assert_eq!(res.time, 1571797429u64);
 
     // redeem funds from the escrow
@@ -159,7 +173,7 @@ fn escrow_redeem_is_always_equal_to_send_amount(s: &String) {
         .wrap()
         .query_wasm_smart(usdc_addr.clone(), &msg)
         .unwrap();
-    assert_eq!(res.balance, Uint128::from(1000u128));
+    assert_eq!(res.balance, Uint128::from(initial_balances[0]));
 
     // check contract balance
     let msg = Cw20QueryMsg::Balance {
