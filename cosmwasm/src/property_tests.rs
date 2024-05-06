@@ -24,20 +24,34 @@ use crate::{
 //
 use proptest::prelude::*;
 
+macro_rules! some_money_amount {
+    () => {
+        0..999999999999999u128
+    };
+}
+
 proptest! {
     #[test]
     fn doesnt_crash(
         addrs in vec!["[:ascii:]{3,}", "[:ascii:]{3,}", "[:ascii:]{3,}"],
-        initial_balances in vec![0..999999999999999u128, 0..999999999999999u128],
-        // amount: u128, // Fails on overflow when adding to it
-        sent_amount : u128
+        values in vec![some_money_amount!(),some_money_amount!(),some_money_amount!(),],
+        escrow_time in 10..99999u64,
     ) {
         prop_assume!(addrs[0] != addrs[1]);
         prop_assume!(addrs[1] != addrs[2]);
         prop_assume!(addrs[0] != addrs[2]);
 
+        // TODO Find the better way for that, using proptest facilities
+        // The sent amount needs to be less or equal to the sender's account balance.
+        let (sent_amount, initial_balances) =
+            if values[0] <= values[1]{
+                (values[0], vec![ values[1], values[2] ])
+            }else{
+                (values[1], vec![ values[0], values[2] ])
+            };
+
         prop_assume!(sent_amount != 0); // Invalid zero amount.
-        escrow_redeem_is_always_equal_to_send_amount(addrs, initial_balances, sent_amount);
+        escrow_redeem_is_always_equal_to_send_amount(addrs, initial_balances, sent_amount, escrow_time);
     }
 }
 
@@ -45,6 +59,7 @@ fn escrow_redeem_is_always_equal_to_send_amount(
     addrs: Vec<String>,
     initial_balances: Vec<u128>,
     sent_amount: u128,
+    escrow_time: u64,
 ) {
     let owner = Addr::unchecked(addrs[0].clone());
     let alice = Addr::unchecked(addrs[1].clone());
@@ -113,7 +128,7 @@ fn escrow_redeem_is_always_equal_to_send_amount(
     let msg = Cw20ExecuteMsg::Send {
         contract: escrow_addr.to_string(),
         amount: Uint128::from(sent_amount),
-        msg: to_binary(&Cw20HookMsg::Escrow { time: 10 }).unwrap(),
+        msg: to_binary(&Cw20HookMsg::Escrow { time: escrow_time }).unwrap(),
     };
 
     let res = router
@@ -144,7 +159,7 @@ fn escrow_redeem_is_always_equal_to_send_amount(
         .query_wasm_smart(escrow_addr.clone(), &msg)
         .unwrap();
     assert_eq!(res.amount, Uint128::from(sent_amount));
-    assert_eq!(res.time, 1571797429u64);
+    assert_eq!(res.time, 1571797419u64 + escrow_time);
 
     // redeem funds from the escrow
     let msg = ExecuteMsg::Redeem {};
@@ -156,7 +171,7 @@ fn escrow_redeem_is_always_equal_to_send_amount(
 
     // move the block time
     router.update_block(|block| {
-        block.time = block.time.plus_seconds(20);
+        block.time = block.time.plus_seconds(escrow_time);
         block.height += 1;
     });
 
